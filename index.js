@@ -85,6 +85,7 @@ async function detectPitch(buffer) {
   });
 }
 
+ zgf5e4-codex/add-pitch-detection-to-raw-metrics
 function countFillerWords(text) {
   const determiners = [
     'a',
@@ -157,6 +158,10 @@ function countFillerWords(text) {
 }
 
 async function getRawMetrics(transcript, segments = [], audioBuffer) {
+
+async function getRawMetrics(transcript, segments = [], audioBuffer) {
+  const fillerList = ['um', 'uh', 'like', 'you know', 'basically', 'i mean'];
+ main
   const words = transcript.trim().split(/\s+/);
   const { total: filler_count, breakdown: filler_breakdown } =
     countFillerWords(transcript);
@@ -181,8 +186,12 @@ async function getRawMetrics(transcript, segments = [], audioBuffer) {
   return {
     wpm,
     pitch: pitch ?? 'N/A',
+ zgf5e4-codex/add-pitch-detection-to-raw-metrics
     filler_words: filler_count,
     filler_word_breakdown: filler_breakdown
+
+    filler_words
+ main
   };
 }
 
