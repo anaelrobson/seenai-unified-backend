@@ -44,11 +44,17 @@ Example response:
   "raw_metrics": {
     "wpm": 165.2,
     "pitch": 230.5,
-    "filler_words": 3
+    "filler_words": 3,
+    "filler_word_total": 3,
+    "filler_word_breakdown": {
+      "um": 1,
+      "uh": 1,
+      "like": 1
+    }
   }
 }
 ```
-`wpm` is calculated from the transcript duration reported by Whisper, while `filler_words` counts common verbal fillers such as "um" or "like". `pitch` reports the median detected pitch of the audio in Hertz.
+`wpm` is calculated from the transcript duration reported by Whisper. `filler_words` and `filler_word_total` count verbal fillers, while `filler_word_breakdown` shows the usage of each filler. `pitch` reports the median detected pitch of the audio in Hertz.
 
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.

@@ -85,10 +85,45 @@ async function detectPitch(buffer) {
   });
 }
 
+function countFillerWords(transcript) {
+  const tokens = transcript.toLowerCase().split(/\s+/);
+  const breakdown = {};
+  let total = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const word = tokens[i];
+    if (word === 'like') {
+      const next = tokens[i + 1] || '';
+      if (
+        ['to', 'a', 'an', 'the', 'my', 'your', 'his', 'her', 'our', 'their', 'this', 'that', 'these', 'those'].includes(
+          next
+        )
+      ) {
+        continue;
+      }
+    }
+    if (word === 'you' && tokens[i + 1] === 'know') {
+      breakdown['you know'] = (breakdown['you know'] || 0) + 1;
+      total++;
+      i++;
+      continue;
+    }
+    if (word === 'i' && tokens[i + 1] === 'mean') {
+      breakdown['i mean'] = (breakdown['i mean'] || 0) + 1;
+      total++;
+      i++;
+      continue;
+    }
+    if (['um', 'uh', 'like', 'basically'].includes(word)) {
+      breakdown[word] = (breakdown[word] || 0) + 1;
+      total++;
+    }
+  }
+  return { total, breakdown };
+}
+
 async function getRawMetrics(transcript, segments = [], audioBuffer) {
-  const fillerList = ['um', 'uh', 'like', 'you know', 'basically', 'i mean'];
   const words = transcript.trim().split(/\s+/);
-  const filler_words = words.filter(w => fillerList.includes(w.toLowerCase())).length;
+  const { total: filler_word_total, breakdown: filler_word_breakdown } = countFillerWords(transcript);
 
   let wpm = 0;
   if (segments.length > 0) {
@@ -110,7 +145,9 @@ async function getRawMetrics(transcript, segments = [], audioBuffer) {
   return {
     wpm,
     pitch: pitch ?? 'N/A',
-    filler_words
+    filler_words: filler_word_total,
+    filler_word_total,
+    filler_word_breakdown
   };
 }
 
