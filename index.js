@@ -85,10 +85,86 @@ async function detectPitch(buffer) {
   });
 }
 
+ zgf5e4-codex/add-pitch-detection-to-raw-metrics
+function countFillerWords(text) {
+  const determiners = [
+    'a',
+    'an',
+    'the',
+    'this',
+    'that',
+    'these',
+    'those',
+    'my',
+    'your',
+    'his',
+    'her',
+    'our',
+    'their'
+  ];
+  const clean = t => t.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, '');
+  const tokens = text.trim().split(/\s+/);
+  const counts = {};
+
+  const inc = w => {
+    counts[w] = (counts[w] || 0) + 1;
+  };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const word = clean(tokens[i]);
+    const next = tokens[i + 1] ? clean(tokens[i + 1]) : '';
+
+    if (word === 'you' && next === 'know') {
+      inc('you know');
+      i++;
+      continue;
+    }
+    if (word === 'i' && next === 'mean') {
+      inc('i mean');
+      i++;
+      continue;
+    }
+    if (word === 'um' || word === 'uh' || word === 'basically') {
+      inc(word);
+      continue;
+    }
+    if (word === 'like') {
+      const pronouns = ['i', 'you', 'he', 'she', 'we', 'they', 'it'];
+      if (
+        !next ||
+        pronouns.includes(next) ||
+        ['um', 'uh', 'so', 'like'].includes(next)
+      ) {
+        inc('like');
+      } else if (
+        !determiners.includes(next) &&
+        !next.endsWith('ing') &&
+        !next.endsWith('ed')
+      ) {
+        inc('like');
+      }
+      continue;
+    }
+    if (word === 'so') {
+      const pronouns = ['i', 'you', 'he', 'she', 'we', 'they', 'it'];
+      if (!next || pronouns.includes(next) || ['um', 'uh', 'like'].includes(next)) {
+        inc('so');
+      }
+    }
+  }
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return { total, breakdown: counts };
+}
+
+async function getRawMetrics(transcript, segments = [], audioBuffer) {
+
 async function getRawMetrics(transcript, segments = [], audioBuffer) {
   const fillerList = ['um', 'uh', 'like', 'you know', 'basically', 'i mean'];
+ main
   const words = transcript.trim().split(/\s+/);
-  const filler_words = words.filter(w => fillerList.includes(w.toLowerCase())).length;
+  const { total: filler_count, breakdown: filler_breakdown } =
+    countFillerWords(transcript);
 
   let wpm = 0;
   if (segments.length > 0) {
@@ -110,7 +186,12 @@ async function getRawMetrics(transcript, segments = [], audioBuffer) {
   return {
     wpm,
     pitch: pitch ?? 'N/A',
+ zgf5e4-codex/add-pitch-detection-to-raw-metrics
+    filler_words: filler_count,
+    filler_word_breakdown: filler_breakdown
+
     filler_words
+ main
   };
 }
 
