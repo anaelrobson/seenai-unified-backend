@@ -44,23 +44,11 @@ Example response:
   "raw_metrics": {
     "wpm": 165.2,
     "pitch": 230.5,
-zgf5e4-codex/add-pitch-detection-to-raw-metrics
-    "filler_words": 3,
-    "filler_word_breakdown": {
-      "um": 2,
-      "like": 1
-    }
-  }
-}
-```
-`wpm` is calculated from the transcript duration reported by Whisper. The `filler_words` count attempts to ignore grammatical uses of words like "like" or "so" and focuses on verbal fillers. A per-word breakdown is available under `filler_word_breakdown`. `pitch` reports the median detected pitch of the audio in Hertz.
-
     "filler_words": 3
   }
 }
 ```
 `wpm` is calculated from the transcript duration reported by Whisper, while `filler_words` counts common verbal fillers such as "um" or "like". `pitch` reports the median detected pitch of the audio in Hertz.
-main
 
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.
