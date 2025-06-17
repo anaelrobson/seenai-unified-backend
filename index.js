@@ -3,6 +3,9 @@ import multer from 'multer';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { File as NodeFile } from 'node:buffer';
+import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
+import { YIN } from 'pitchfinder';
 
 dotenv.config();
 
@@ -46,10 +49,117 @@ async function analyzeTranscript(transcript) {
   }
 }
 
-function getRawMetrics(transcript, segments = []) {
-  const fillerList = ['um', 'uh', 'like', 'you know', 'basically', 'i mean'];
+async function detectPitch(buffer) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn(ffmpegPath || 'ffmpeg', [
+      '-i', 'pipe:0',
+      '-f', 's16le',
+      '-ac', '1',
+      '-ar', '44100',
+      'pipe:1'
+    ]);
+
+    const pcmChunks = [];
+    ff.stdout.on('data', c => pcmChunks.push(c));
+    ff.on('error', reject);
+    ff.on('close', code => {
+      if (code !== 0) {
+        return reject(new Error(`ffmpeg exited with code ${code}`));
+      }
+      const pcm = Buffer.concat(pcmChunks);
+      const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2);
+      const yin = YIN({ sampleRate: 44100 });
+      const frameSize = 2048;
+      const pitches = [];
+      for (let i = 0; i + frameSize <= samples.length; i += frameSize) {
+        const frame = Array.from(samples.subarray(i, i + frameSize));
+        const freq = yin(frame);
+        if (freq) pitches.push(freq);
+      }
+      if (!pitches.length) return resolve(null);
+      pitches.sort((a, b) => a - b);
+      const median = pitches[Math.floor(pitches.length / 2)];
+      resolve(+median.toFixed(2));
+    });
+    ff.stdin.end(buffer);
+  });
+}
+
+function countFillerWords(text) {
+  const determiners = [
+    'a',
+    'an',
+    'the',
+    'this',
+    'that',
+    'these',
+    'those',
+    'my',
+    'your',
+    'his',
+    'her',
+    'our',
+    'their'
+  ];
+  const clean = t => t.toLowerCase().replace(/^[^a-z]+|[^a-z]+$/g, '');
+  const tokens = text.trim().split(/\s+/);
+  const counts = {};
+
+  const inc = w => {
+    counts[w] = (counts[w] || 0) + 1;
+  };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const word = clean(tokens[i]);
+    const next = tokens[i + 1] ? clean(tokens[i + 1]) : '';
+
+    if (word === 'you' && next === 'know') {
+      inc('you know');
+      i++;
+      continue;
+    }
+    if (word === 'i' && next === 'mean') {
+      inc('i mean');
+      i++;
+      continue;
+    }
+    if (word === 'um' || word === 'uh' || word === 'basically') {
+      inc(word);
+      continue;
+    }
+    if (word === 'like') {
+      const pronouns = ['i', 'you', 'he', 'she', 'we', 'they', 'it'];
+      if (
+        !next ||
+        pronouns.includes(next) ||
+        ['um', 'uh', 'so', 'like'].includes(next)
+      ) {
+        inc('like');
+      } else if (
+        !determiners.includes(next) &&
+        !next.endsWith('ing') &&
+        !next.endsWith('ed')
+      ) {
+        inc('like');
+      }
+      continue;
+    }
+    if (word === 'so') {
+      const pronouns = ['i', 'you', 'he', 'she', 'we', 'they', 'it'];
+      if (!next || pronouns.includes(next) || ['um', 'uh', 'like'].includes(next)) {
+        inc('so');
+      }
+    }
+  }
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  return { total, breakdown: counts };
+}
+
+async function getRawMetrics(transcript, segments = [], audioBuffer) {
   const words = transcript.trim().split(/\s+/);
-  const filler_words = words.filter(w => fillerList.includes(w.toLowerCase())).length;
+  const { total: filler_count, breakdown: filler_breakdown } =
+    countFillerWords(transcript);
 
   let wpm = 0;
   if (segments.length > 0) {
@@ -59,10 +169,20 @@ function getRawMetrics(transcript, segments = []) {
     }
   }
 
+  let pitch = null;
+  if (audioBuffer) {
+    try {
+      pitch = await detectPitch(audioBuffer);
+    } catch (err) {
+      console.error('Pitch detection error:', err);
+    }
+  }
+
   return {
     wpm,
-    pitch: 'N/A',
-    filler_words
+    pitch: pitch ?? 'N/A',
+    filler_words: filler_count,
+    filler_word_breakdown: filler_breakdown
   };
 }
 
@@ -106,7 +226,11 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
     }
 
     try {
-      result.raw_metrics = getRawMetrics(result.transcript, segments);
+      result.raw_metrics = await getRawMetrics(
+        result.transcript,
+        segments,
+        req.file.buffer
+      );
     } catch (err) {
       console.error('Metrics calculation error:', err);
     }

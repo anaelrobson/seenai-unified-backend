@@ -9,6 +9,9 @@ This Express server provides a single `/analyze` endpoint that accepts a video f
    ```bash
    npm install
    ```
+   The server relies on `ffmpeg` for audio decoding. A static build is
+   included via the `ffmpeg-static` package, but you can also install
+   `ffmpeg` from your system package manager if preferred.
 2. Copy `.env.example` to `.env` and add your OpenAI API key
    ```bash
    cp .env.example .env
@@ -40,12 +43,16 @@ Example response:
   "tone_explanation": "9: High because of excited delivery",
   "raw_metrics": {
     "wpm": 165.2,
-    "pitch": "N/A",
-    "filler_words": 3
+    "pitch": 230.5,
+    "filler_words": 3,
+    "filler_word_breakdown": {
+      "um": 2,
+      "like": 1
+    }
   }
 }
 ```
-`wpm` is calculated from the transcript duration reported by Whisper, while `filler_words` counts common verbal fillers such as "um" or "like". Pitch analysis is not implemented and will return `"N/A"`.
+`wpm` is calculated from the transcript duration reported by Whisper. The `filler_words` count attempts to ignore grammatical uses of words like "like" or "so" and focuses on verbal fillers. A per-word breakdown is available under `filler_word_breakdown`. `pitch` reports the median detected pitch of the audio in Hertz.
 
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.
