@@ -26,8 +26,8 @@ async function analyzeTranscript(transcript) {
         role: 'system',
         content:
           'Summarize the speaker\'s tone, energy and communication style in one paragraph. ' +
-          'Also provide a short descriptive tone label and a tone rating from 1-10. ' +
-          'Return a JSON object with keys "summary", "tone", and "tone_rating".'
+          'Provide a short descriptive tone label, a tone rating from 1-10, and a concise explanation of the rating. ' +
+          'Return a JSON object with keys "summary", "tone", "tone_rating", and "tone_explanation".'
       },
       { role: 'user', content: transcript }
     ]
@@ -40,18 +40,28 @@ async function analyzeTranscript(transcript) {
     return {
       summary: completion.choices[0].message.content.trim(),
       tone: '',
-      tone_rating: null
+      tone_rating: null,
+      tone_explanation: ''
     };
   }
 }
 
-function getRawMetrics(transcript) {
-  const fillerList = ['um', 'uh', 'like', 'you know', 'i mean'];
+function getRawMetrics(transcript, segments = []) {
+  const fillerList = ['um', 'uh', 'like', 'you know', 'basically', 'i mean'];
   const words = transcript.trim().split(/\s+/);
   const filler_words = words.filter(w => fillerList.includes(w.toLowerCase())).length;
+
+  let wpm = 0;
+  if (segments.length > 0) {
+    const duration = segments[segments.length - 1].end - segments[0].start;
+    if (duration > 0) {
+      wpm = +(words.length / (duration / 60)).toFixed(2);
+    }
+  }
+
   return {
-    wpm: 0, // duration information unavailable
-    pitch: 0, // placeholder
+    wpm,
+    pitch: 'N/A',
     filler_words
   };
 }
@@ -66,16 +76,20 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
     summary: null,
     tone: null,
     tone_rating: null,
+    tone_explanation: null,
     raw_metrics: null
   };
 
+  let segments = [];
   try {
     const file = await OpenAI.toFile(req.file.buffer, req.file.originalname);
     const transcription = await openai.audio.transcriptions.create({
       file,
-      model: 'whisper-1'
+      model: 'whisper-1',
+      response_format: 'verbose_json'
     });
     result.transcript = transcription.text;
+    segments = transcription.segments || [];
   } catch (err) {
     console.error('Transcription error:', err);
   }
@@ -86,12 +100,13 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
       result.summary = analysis.summary;
       result.tone = analysis.tone;
       result.tone_rating = analysis.tone_rating;
+      result.tone_explanation = analysis.tone_explanation;
     } catch (err) {
       console.error('Tone analysis error:', err);
     }
 
     try {
-      result.raw_metrics = getRawMetrics(result.transcript);
+      result.raw_metrics = getRawMetrics(result.transcript, segments);
     } catch (err) {
       console.error('Metrics calculation error:', err);
     }

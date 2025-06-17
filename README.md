@@ -5,9 +5,11 @@ This Express server provides a single `/analyze` endpoint that accepts a video f
 
 ## Setup
 
-1. Install dependencies (Node.js 18+)
-   ```bash
-   npm install
+Example response:
+  "tone_explanation": "9: High because of excited delivery",
+    "wpm": 165.2,
+    "pitch": "N/A",
+`wpm` is calculated from the transcript duration reported by Whisper, while `filler_words` counts common verbal fillers such as "um" or "like". Pitch analysis is not implemented and will return `"N/A"`.
    ```
 2. Copy `.env.example` to `.env` and add your OpenAI API key
    ```bash
