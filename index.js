@@ -2,8 +2,13 @@ import express from 'express';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import { File as NodeFile } from 'node:buffer';
 
 dotenv.config();
+
+if (typeof globalThis.File === 'undefined') {
+  globalThis.File = NodeFile;
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
