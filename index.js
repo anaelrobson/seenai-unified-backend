@@ -20,7 +20,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-async function analyzeTranscript(transcript) {
+async function analyzeTranscript(transcript, metrics = {}) {
+  const metricParts = [];
+  if (metrics.wpm) metricParts.push(`words per minute: ${metrics.wpm}`);
+  if (typeof metrics.pitch !== 'undefined') metricParts.push(`pitch: ${metrics.pitch}`);
+  if (metrics.filler_word_total !== undefined)
+    metricParts.push(`filler words: ${metrics.filler_word_total}`);
+  const metricInfo = metricParts.length ? `\n\nMetrics: ${metricParts.join(', ')}` : '';
+
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     response_format: { type: 'json_object' },
@@ -28,11 +35,13 @@ async function analyzeTranscript(transcript) {
       {
         role: 'system',
         content:
-          'Summarize the speaker\'s tone, energy and communication style in one paragraph. ' +
-          'Provide a short descriptive tone label, a tone rating from 1-10, and a concise explanation of the rating. ' +
-          'Return a JSON object with keys "summary", "tone", "tone_rating", and "tone_explanation".'
+          'You are a vocal delivery coach. Summarize the speaker\'s tone, energy and communication style in one paragraph. ' +
+          'Provide a short descriptive tone label and a tone rating from 1-10 (5 is average, reserve 9-10 for truly exceptional delivery). ' +
+          'Critique redundancy, hype word overuse, filler words, tone mismatches or monotony. ' +
+          'Return a JSON object with keys "summary", "tone", "tone_rating", "tone_explanation", and "feedback". ' +
+          'The "feedback" field should give one or two concise sentences of direct advice.'
       },
-      { role: 'user', content: transcript }
+      { role: 'user', content: transcript + metricInfo }
     ]
   });
 
@@ -44,7 +53,8 @@ async function analyzeTranscript(transcript) {
       summary: completion.choices[0].message.content.trim(),
       tone: '',
       tone_rating: null,
-      tone_explanation: ''
+      tone_explanation: '',
+      feedback: ''
     };
   }
 }
@@ -162,7 +172,8 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
     tone: null,
     tone_rating: null,
     tone_explanation: null,
-    raw_metrics: null
+    raw_metrics: null,
+    feedback: null
   };
 
   let segments = [];
@@ -181,16 +192,6 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
 
   if (result.transcript) {
     try {
-      const analysis = await analyzeTranscript(result.transcript);
-      result.summary = analysis.summary;
-      result.tone = analysis.tone;
-      result.tone_rating = analysis.tone_rating;
-      result.tone_explanation = analysis.tone_explanation;
-    } catch (err) {
-      console.error('Tone analysis error:', err);
-    }
-
-    try {
       result.raw_metrics = await getRawMetrics(
         result.transcript,
         segments,
@@ -198,6 +199,17 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
       );
     } catch (err) {
       console.error('Metrics calculation error:', err);
+    }
+
+    try {
+      const analysis = await analyzeTranscript(result.transcript, result.raw_metrics);
+      result.summary = analysis.summary;
+      result.tone = analysis.tone;
+      result.tone_rating = analysis.tone_rating;
+      result.tone_explanation = analysis.tone_explanation;
+      result.feedback = analysis.feedback;
+    } catch (err) {
+      console.error('Tone analysis error:', err);
     }
   }
 
