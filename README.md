@@ -45,8 +45,17 @@ Example response:
   "raw_metrics": {
     "wpm": 165.2,
     "pitch": 230.5,
+    "pitch_variation": 32.1,
     "filler_words": 3,
     "filler_word_total": 3,
+    "repetitive_phrases": ["you know"],
+    "repetition_score": 1,
+    "energy_score": 7,
+    "energy_label": "Moderate",
+    "disfluency_score": 6,
+    "disfluency_label": "Somewhat Choppy",
+    "cadence_score": 8,
+    "cadence_description": "Smooth",
     "filler_word_breakdown": {
       "um": 1,
       "uh": 1,
@@ -55,7 +64,7 @@ Example response:
   }
 }
 ```
-`feedback` contains a short suggestion for improving vocal delivery. `wpm` is calculated from the transcript duration reported by Whisper. `filler_words` and `filler_word_total` count verbal fillers, while `filler_word_breakdown` shows the usage of each filler. `pitch` reports the median detected pitch of the audio in Hertz.
+`feedback` contains a short suggestion for improving vocal delivery. `wpm` is calculated from the transcript duration reported by Whisper. `filler_words` and `filler_word_total` count verbal fillers, while `filler_word_breakdown` shows the usage of each filler. `pitch` reports the median detected pitch and `pitch_variation` represents its standard deviation. `energy_score` reflects speaking rate and pitch variation, `disfluency_score` factors in filler usage, repetitions and sentence clarity, and `cadence_score` measures pacing consistency.
 
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.

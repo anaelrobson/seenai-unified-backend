@@ -24,8 +24,18 @@ async function analyzeTranscript(transcript, metrics = {}) {
   const metricParts = [];
   if (metrics.wpm) metricParts.push(`words per minute: ${metrics.wpm}`);
   if (typeof metrics.pitch !== 'undefined') metricParts.push(`pitch: ${metrics.pitch}`);
+  if (typeof metrics.pitch_variation !== 'undefined')
+    metricParts.push(`pitch variation: ${metrics.pitch_variation}`);
   if (metrics.filler_word_total !== undefined)
     metricParts.push(`filler words: ${metrics.filler_word_total}`);
+  if (metrics.energy_score !== undefined)
+    metricParts.push(`energy score: ${metrics.energy_score}`);
+  if (metrics.disfluency_score !== undefined)
+    metricParts.push(`disfluency score: ${metrics.disfluency_score}`);
+  if (metrics.repetition_score !== undefined)
+    metricParts.push(`repetition score: ${metrics.repetition_score}`);
+  if (metrics.cadence_score !== undefined)
+    metricParts.push(`cadence score: ${metrics.cadence_score}`);
   const metricInfo = metricParts.length ? `\n\nMetrics: ${metricParts.join(', ')}` : '';
 
   const completion = await openai.chat.completions.create({
@@ -36,8 +46,9 @@ async function analyzeTranscript(transcript, metrics = {}) {
         role: 'system',
         content:
           'You are a vocal delivery coach. Summarize the speaker\'s tone, energy and communication style in one paragraph. ' +
-          'Provide a short descriptive tone label and a tone rating from 1-10 (5 is average, reserve 9-10 for truly exceptional delivery). ' +
-          'Critique redundancy, hype word overuse, filler words, tone mismatches or monotony. ' +
+          'Metrics such as words per minute, pitch, pitch variation, energy score, repetition score, disfluency score and cadence score will be provided. ' +
+          'Use them to judge the delivery\'s quality. Low energy, high disfluency or poor cadence should reduce the tone rating and be mentioned in your feedback. ' +
+          'Provide a short descriptive tone label and a tone rating from 1-10 (5 is average, reserve 9-10 for exceptional delivery). ' +
           'Return a JSON object with keys "summary", "tone", "tone_rating", "tone_explanation", and "feedback". ' +
           'The "feedback" field should give one or two concise sentences of direct advice.'
       },
@@ -89,7 +100,13 @@ async function detectPitch(buffer) {
       if (!pitches.length) return resolve(null);
       pitches.sort((a, b) => a - b);
       const median = pitches[Math.floor(pitches.length / 2)];
-      resolve(+median.toFixed(2));
+      const mean = pitches.reduce((s, p) => s + p, 0) / pitches.length;
+      const variance = pitches.reduce((s, p) => s + (p - mean) ** 2, 0) / pitches.length;
+      const std = Math.sqrt(variance);
+      resolve({
+        median: +median.toFixed(2),
+        variation: +std.toFixed(2)
+      });
     });
     ff.stdin.end(buffer);
   });
@@ -131,6 +148,19 @@ function countFillerWords(transcript) {
   return { total, breakdown };
 }
 
+function detectRepetitions(transcript) {
+  const tokens = transcript.toLowerCase().split(/\s+/);
+  const counts = {};
+  for (let n = 2; n <= 5; n++) {
+    for (let i = 0; i + n <= tokens.length; i++) {
+      const phrase = tokens.slice(i, i + n).join(' ');
+      counts[phrase] = (counts[phrase] || 0) + 1;
+    }
+  }
+  const phrases = Object.keys(counts).filter(p => counts[p] > 1);
+  return { phrases, score: phrases.length };
+}
+
 async function getRawMetrics(transcript, segments = [], audioBuffer) {
   const words = transcript.trim().split(/\s+/);
   const { total: filler_word_total, breakdown: filler_word_breakdown } = countFillerWords(transcript);
@@ -143,21 +173,83 @@ async function getRawMetrics(transcript, segments = [], audioBuffer) {
     }
   }
 
-  let pitch = null;
+  let pitchInfo = null;
   if (audioBuffer) {
     try {
-      pitch = await detectPitch(audioBuffer);
+      pitchInfo = await detectPitch(audioBuffer);
     } catch (err) {
       console.error('Pitch detection error:', err);
     }
   }
 
+  const { phrases: repetitive_phrases, score: repetition_score } = detectRepetitions(transcript);
+
+  const pitch = pitchInfo ? pitchInfo.median : null;
+  const pitch_variation = pitchInfo ? pitchInfo.variation : null;
+
+  const wpmNorm = Math.min(1, wpm / 160);
+  const pitchVarNorm = Math.min(1, (pitch_variation || 0) / 60);
+  const energy_score = Math.round(((wpmNorm + pitchVarNorm) / 2) * 10);
+  const energy_label =
+    energy_score > 7 ? 'High' : energy_score >= 4 ? 'Moderate' : 'Low';
+
+  const fillerRatio = filler_word_total / words.length;
+  const sentences = transcript.split(/[.!?]+/).filter(Boolean);
+  const avgSentenceLength = words.length / (sentences.length || 1);
+  let disfluency_score = 10;
+  disfluency_score -= Math.min(5, fillerRatio * 50);
+  disfluency_score -= Math.min(3, repetition_score);
+  if (avgSentenceLength > 20 || avgSentenceLength < 5) disfluency_score -= 2;
+  disfluency_score = Math.max(1, Math.round(disfluency_score));
+  const disfluency_label =
+    disfluency_score > 7 ? 'Smooth' : disfluency_score >= 4 ? 'Somewhat Choppy' : 'Very Choppy';
+
+  // Cadence score based on pause consistency, WPM and filler usage
+  let avgGap = 0;
+  let gapStd = 0;
+  if (segments.length > 1) {
+    const gaps = [];
+    for (let i = 0; i < segments.length - 1; i++) {
+      const gap = segments[i + 1].start - segments[i].end;
+      if (gap > 0) gaps.push(gap);
+    }
+    if (gaps.length) {
+      avgGap = gaps.reduce((s, g) => s + g, 0) / gaps.length;
+      const mean = avgGap;
+      const variance = gaps.reduce((s, g) => s + (g - mean) ** 2, 0) / gaps.length;
+      gapStd = Math.sqrt(variance);
+    }
+  }
+  let cadence_score = 10;
+  cadence_score -= Math.min(3, avgGap * 3);
+  cadence_score -= Math.min(2, gapStd * 2);
+  cadence_score -= Math.min(3, Math.abs(wpm - 150) / 50);
+  cadence_score -= Math.min(2, fillerRatio * 10);
+  cadence_score = Math.max(1, Math.round(cadence_score));
+  const cadence_description =
+    cadence_score > 8
+      ? 'Very Smooth'
+      : cadence_score >= 6
+      ? 'Smooth'
+      : cadence_score >= 4
+      ? 'Uneven'
+      : 'Choppy';
+
   return {
     wpm,
     pitch: pitch ?? 'N/A',
+    pitch_variation: pitch_variation ?? 'N/A',
     filler_words: filler_word_total,
     filler_word_total,
-    filler_word_breakdown
+    filler_word_breakdown,
+    repetitive_phrases,
+    repetition_score,
+    energy_score,
+    energy_label,
+    disfluency_score,
+    disfluency_label,
+    cadence_score,
+    cadence_description
   };
 }
 
