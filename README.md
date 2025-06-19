@@ -48,7 +48,7 @@ Example response:
     "pitch_variation": 32.1,
     "filler_words": 3,
     "filler_word_total": 3,
-    "repetitive_phrases": ["you know"],
+    "repetitive_phrases": ["i just want to"],
     "repetition_score": 1,
     "energy_score": 7,
     "energy_label": "Moderate",

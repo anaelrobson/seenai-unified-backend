@@ -157,7 +157,18 @@ function detectRepetitions(transcript) {
       counts[phrase] = (counts[phrase] || 0) + 1;
     }
   }
-  const phrases = Object.keys(counts).filter(p => counts[p] > 1);
+
+  const repeated = Object.keys(counts)
+    .filter(p => counts[p] > 1)
+    .sort((a, b) => b.split(' ').length - a.split(' ').length);
+
+  const phrases = [];
+  for (const phrase of repeated) {
+    if (!phrases.some(longer => longer.includes(phrase))) {
+      phrases.push(phrase);
+    }
+  }
+
   return { phrases, score: phrases.length };
 }
 
