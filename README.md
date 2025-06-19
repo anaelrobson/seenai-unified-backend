@@ -1,7 +1,7 @@
 codex/build-unified-node.js-express-backend
 # SeenAI Unified Backend
 
-This Express server provides a single `/analyze` endpoint that accepts a video file and returns a transcript along with a detailed tone analysis report.
+This Express server provides a single `/analyze` endpoint that accepts a video file and returns a transcript along with a detailed tone analysis report. The tone analysis now offers stricter scoring and a short feedback message to help improve delivery.
 
 ## Setup
 
@@ -41,6 +41,7 @@ Example response:
   "tone": "Confident, high-energy",
   "tone_rating": 8.9,
   "tone_explanation": "9: High because of excited delivery",
+  "feedback": "Try varying your pitch more to avoid sounding monotone",
   "raw_metrics": {
     "wpm": 165.2,
     "pitch": 230.5,
@@ -54,7 +55,7 @@ Example response:
   }
 }
 ```
-`wpm` is calculated from the transcript duration reported by Whisper. `filler_words` and `filler_word_total` count verbal fillers, while `filler_word_breakdown` shows the usage of each filler. `pitch` reports the median detected pitch of the audio in Hertz.
+`feedback` contains a short suggestion for improving vocal delivery. `wpm` is calculated from the transcript duration reported by Whisper. `filler_words` and `filler_word_total` count verbal fillers, while `filler_word_breakdown` shows the usage of each filler. `pitch` reports the median detected pitch of the audio in Hertz.
 
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.
