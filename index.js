@@ -14,6 +14,7 @@ if (typeof globalThis.File === 'undefined') {
 }
 
 const app = express();
+app.use(express.json({ limit: '50mb' }));
 const port = process.env.PORT || 3000;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -109,6 +110,30 @@ async function detectPitch(buffer) {
       });
     });
     ff.stdin.end(buffer);
+  });
+}
+
+async function extractFrame(videoBuffer, timestamp) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn(ffmpegPath || 'ffmpeg', [
+      '-ss', String(timestamp),
+      '-i', 'pipe:0',
+      '-frames:v', '1',
+      '-f', 'image2',
+      '-vcodec', 'mjpeg',
+      'pipe:1'
+    ]);
+
+    const chunks = [];
+    ff.stdout.on('data', c => chunks.push(c));
+    ff.on('error', reject);
+    ff.on('close', code => {
+      if (code !== 0) {
+        return reject(new Error(`ffmpeg exited with code ${code}`));
+      }
+      resolve(Buffer.concat(chunks));
+    });
+    ff.stdin.end(videoBuffer);
   });
 }
 
@@ -318,6 +343,101 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
 
   if (!result.transcript) {
     return next(new Error('Failed to transcribe video'));
+  }
+
+  res.json(result);
+});
+
+app.post('/api/tone/analyze', async (req, res, next) => {
+  const { videoUrl, frameMode = 'basic' } = req.body || {};
+  if (!videoUrl) {
+    return res.status(400).json({ error: 'videoUrl is required' });
+  }
+
+  let videoBuffer;
+  try {
+    const resp = await fetch(videoUrl);
+    if (!resp.ok) throw new Error('Failed to fetch video');
+    videoBuffer = Buffer.from(await resp.arrayBuffer());
+  } catch (err) {
+    console.error('Video download error:', err);
+    return next(new Error('Failed to download video'));
+  }
+
+  const result = {
+    transcript: null,
+    summary: null,
+    tone: null,
+    tone_rating: null,
+    tone_explanation: null,
+    raw_metrics: null,
+    feedback: null,
+    frames: []
+  };
+
+  let segments = [];
+  try {
+    const file = await OpenAI.toFile(videoBuffer, 'video.mp4');
+    const transcription = await openai.audio.transcriptions.create({
+      file,
+      model: 'whisper-1',
+      response_format: 'verbose_json'
+    });
+    result.transcript = transcription.text;
+    segments = transcription.segments || [];
+  } catch (err) {
+    console.error('Transcription error:', err);
+  }
+
+  if (result.transcript) {
+    try {
+      result.raw_metrics = await getRawMetrics(result.transcript, segments, videoBuffer);
+    } catch (err) {
+      console.error('Metrics calculation error:', err);
+    }
+
+    try {
+      const analysis = await analyzeTranscript(result.transcript, result.raw_metrics);
+      result.summary = analysis.summary;
+      result.tone = analysis.tone;
+      result.tone_rating = analysis.tone_rating;
+      result.tone_explanation = analysis.tone_explanation;
+      result.feedback = analysis.feedback;
+    } catch (err) {
+      console.error('Tone analysis error:', err);
+    }
+  }
+
+  if (!result.transcript) {
+    return next(new Error('Failed to transcribe video'));
+  }
+
+  try {
+    const times = segments
+      .map(s => s.start)
+      .filter(t => typeof t === 'number' && !isNaN(t))
+      .sort((a, b) => a - b);
+    const deduped = [];
+    for (const t of times) {
+      if (!deduped.length || t - deduped[deduped.length - 1] > 1) {
+        deduped.push(+t.toFixed(2));
+      }
+    }
+    const limit = frameMode === 'detailed' ? 50 : 10;
+    const selected = deduped.slice(0, limit);
+    for (const ts of selected) {
+      try {
+        const img = await extractFrame(videoBuffer, ts);
+        result.frames.push({
+          timestamp: ts,
+          base64: `data:image/jpeg;base64,${img.toString('base64')}`
+        });
+      } catch (err) {
+        console.error('Frame extraction error:', err);
+      }
+    }
+  } catch (err) {
+    console.error('Frame grabbing error:', err);
   }
 
   res.json(result);
