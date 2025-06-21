@@ -2,17 +2,11 @@ import express from 'express';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { File as NodeFile } from 'node:buffer';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { YIN } from 'pitchfinder';
 
 dotenv.config();
-
-if (typeof globalThis.File === 'undefined') {
-  globalThis.File = NodeFile;
-}
-
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 const port = process.env.PORT || 3000;
@@ -326,9 +320,8 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
 
   let segments = [];
   try {
-    const file = await OpenAI.toFile(req.file.buffer, req.file.originalname);
     const transcription = await openai.audio.transcriptions.create({
-      file,
+      file: req.file.buffer,
       model: 'whisper-1',
       response_format: 'verbose_json'
     });
@@ -418,9 +411,8 @@ app.post('/api/tone/analyze', async (req, res, next) => {
 
   let segments = [];
   try {
-    const file = await OpenAI.toFile(videoBuffer, 'video.mp4');
     const transcription = await openai.audio.transcriptions.create({
-      file,
+      file: videoBuffer,
       model: 'whisper-1',
       response_format: 'verbose_json'
     });
