@@ -69,7 +69,3 @@ Example response:
 ## Error Handling
 If an error occurs, a JSON response with `error` is returned and the server logs the error to the console.
 
-## Remote Tone API
-
-`POST /api/tone/analyze` accepts a JSON body with a `videoUrl`. The URL must point directly to an MP4 file no larger than 25\u00A0MB.
-
