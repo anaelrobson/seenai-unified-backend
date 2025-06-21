@@ -2,14 +2,15 @@ import express from 'express';
 import multer from 'multer';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import { File as NodeFile } from 'node:buffer';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import { YIN } from 'pitchfinder';
 
 dotenv.config();
 
-if (!process.env.OPENAI_API_KEY) {
-  console.warn('Warning: OPENAI_API_KEY environment variable is missing');
+if (typeof globalThis.File === 'undefined') {
+  globalThis.File = NodeFile;
 }
 
 const app = express();
@@ -263,10 +264,6 @@ async function getRawMetrics(transcript, segments = [], audioBuffer) {
   };
 }
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
 app.post('/analyze', upload.single('video'), async (req, res, next) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video file provided' });
@@ -284,8 +281,9 @@ app.post('/analyze', upload.single('video'), async (req, res, next) => {
 
   let segments = [];
   try {
+    const file = await OpenAI.toFile(req.file.buffer, req.file.originalname);
     const transcription = await openai.audio.transcriptions.create({
-      file: req.file.buffer,
+      file,
       model: 'whisper-1',
       response_format: 'verbose_json'
     });
