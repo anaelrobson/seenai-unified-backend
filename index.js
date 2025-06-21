@@ -21,8 +21,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const MAX_VIDEO_SIZE = 25 * 1024 * 1024; // 25 MB
-
 async function analyzeTranscript(transcript, metrics = {}) {
   const metricParts = [];
   if (metrics.wpm) metricParts.push(`words per minute: ${metrics.wpm}`);
@@ -136,24 +134,6 @@ async function extractFrame(videoBuffer, timestamp) {
       resolve(Buffer.concat(chunks));
     });
     ff.stdin.end(videoBuffer);
-  });
-}
-
-async function validateVideo(buffer) {
-  return new Promise((resolve, reject) => {
-    const ff = spawn(ffmpegPath || 'ffmpeg', [
-      '-v', 'error',
-      '-i', 'pipe:0',
-      '-f', 'null',
-      '-'
-    ]);
-    ff.on('error', reject);
-    ff.on('close', code => {
-      if (code === 0) return resolve(true);
-      reject(new Error('Invalid media file'));
-    });
-    ff.stderr.resume();
-    ff.stdin.end(buffer);
   });
 }
 
@@ -377,32 +357,11 @@ app.post('/api/tone/analyze', async (req, res, next) => {
   let videoBuffer;
   try {
     const resp = await fetch(videoUrl);
-    console.log('Fetch status:', resp.status);
-    console.log('Content-Type:', resp.headers.get('content-type'));
-    console.log('Content-Length:', resp.headers.get('content-length'));
     if (!resp.ok) throw new Error('Failed to fetch video');
-    const type = resp.headers.get('content-type') || '';
-    if (!type.startsWith('video/') && !type.startsWith('audio/')) {
-      return res.status(400).json({ error: 'URL must point to a video or audio file' });
-    }
-    const lenHeader = resp.headers.get('content-length');
-    if (lenHeader && parseInt(lenHeader, 10) > MAX_VIDEO_SIZE) {
-      return res.status(400).json({ error: 'Video must be under 25MB' });
-    }
     videoBuffer = Buffer.from(await resp.arrayBuffer());
-    if (videoBuffer.length > MAX_VIDEO_SIZE) {
-      return res.status(400).json({ error: 'Video must be under 25MB' });
-    }
   } catch (err) {
     console.error('Video download error:', err);
     return next(new Error('Failed to download video'));
-  }
-
-  try {
-    await validateVideo(videoBuffer);
-  } catch (err) {
-    console.error('Video validation error:', err);
-    return res.status(400).json({ error: 'Invalid or unsupported video file' });
   }
 
   const result = {
